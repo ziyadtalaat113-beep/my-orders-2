@@ -1,0 +1,99 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>متتبع الأوردرات</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Tajawal', sans-serif;
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-spin-slow {
+      animation: spin 2s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    /* Responsive table styles */
+    @media screen and (max-width: 768px) {
+      .responsive-table thead {
+        display: none;
+      }
+      .responsive-table tr {
+        display: block;
+        margin-bottom: 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+      }
+      .dark .responsive-table tr {
+        border-color: #374151;
+      }
+      .responsive-table td {
+        display: block;
+        text-align: right; /* RTL alignment */
+        padding-right: 50%; /* Make space for label */
+        position: relative;
+        border: none;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .dark .responsive-table td {
+        border-bottom-color: #374151;
+      }
+      .responsive-table td:last-child {
+        border-bottom: none;
+      }
+      .responsive-table td::before {
+        content: attr(data-label);
+        position: absolute;
+        right: 0.75rem; /* RTL positioning */
+        top: 50%;
+        transform: translateY(-50%);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+    }
+  </style>
+  <script>
+    // Tailwind config
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Tajawal', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0"
+  }
+}
+</script>
+</head>
+<body class="bg-slate-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.js"></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
