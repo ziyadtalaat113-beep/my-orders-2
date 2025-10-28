@@ -4,30 +4,9 @@ import { User, UserRole, Order, OrderType, OrderStatus } from './types';
 import { SUPER_ADMIN_EMAIL } from './constants';
 import { SunIcon, MoonIcon, EyeIcon, EyeOffIcon, ChevronDownIcon, TrashIcon, FileDownIcon, XIcon } from './components/Icons';
 import { generateOrderSummary } from './services/geminiService';
+import * as firebaseService from './services/firebaseService';
 
 declare const jspdf: any;
-
-// --- MOCK LOCAL STORAGE "DATABASE" ---
-const USERS_STORAGE_KEY = 'orderTrackerUsers';
-const ORDERS_STORAGE_KEY = 'orderTrackerOrders';
-
-const getInitialUsers = (): User[] => {
-  try {
-    const storedUsers = localStorage.getItem(USERS_STORAGE_KEY);
-    return storedUsers ? JSON.parse(storedUsers) : [];
-  } catch {
-    return [];
-  }
-};
-
-const getInitialOrders = (): Order[] => {
-  try {
-    const storedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
-    return storedOrders ? JSON.parse(storedOrders) : [];
-  } catch {
-    return [];
-  }
-};
 
 // --- HELPER FUNCTIONS ---
 const toArabicNumerals = (numStr: string | number | undefined): string => {
@@ -93,8 +72,8 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>(getInitialUsers);
-  const [orders, setOrders] = useState<Order[]>(getInitialOrders);
+  const [users, setUsers] = useState<User[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [isLoginView, setIsLoginView] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -118,21 +97,31 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    const loggedInUserEmail = localStorage.getItem('loggedInUser');
-    if (loggedInUserEmail) {
-      const user = users.find(u => u.email === loggedInUserEmail);
-      setCurrentUser(user || null);
-    }
-    setIsLoading(false);
-  }, [users]);
-  
-  useEffect(() => {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  }, [users]);
+    const unsubscribe = firebaseService.onAuthStateChangedListener(async (user) => {
+      if (user) {
+        const fullUser = await firebaseService.getUser(user.uid);
+        setCurrentUser(fullUser);
+      } else {
+        setCurrentUser(null);
+      }
+      setIsLoading(false);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-  }, [orders]);
+    if (currentUser) {
+      const unsubscribeUsers = firebaseService.getUsers(setUsers);
+      const unsubscribeOrders = firebaseService.getOrders(setOrders);
+      return () => {
+        unsubscribeUsers();
+        unsubscribeOrders();
+      };
+    } else {
+      setUsers([]);
+      setOrders([]);
+    }
+  }, [currentUser]);
   
   // Memos for performance
   const filteredAndSortedOrders = useMemo(() => {
@@ -168,39 +157,33 @@ export default function App() {
     setToast({ message, type });
   };
   
-  const handleRegister = (email: string, pass: string) => {
-    if (users.some(u => u.email === email)) {
-      showToast('هذا البريد الإلكتروني مسجل بالفعل.', 'error');
-      return;
+  const handleRegister = async (email: string, pass: string) => {
+    const { error } = await firebaseService.registerWithEmail(email, pass);
+    if (error) {
+        showToast(error, 'error');
+    } else {
+        showToast('تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول.', 'success');
+        setIsLoginView(true);
     }
-    const role: UserRole = email === SUPER_ADMIN_EMAIL ? 'admin' : 'guest';
-    const newUser: User = { id: Date.now().toString(), email, role };
-    setUsers(prev => [...prev, newUser]);
-    showToast('تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول.', 'success');
-    setIsLoginView(true);
   };
 
-  const handleLogin = (email: string, pass: string) => {
-    const user = users.find(u => u.email === email);
-    if (!user) {
-      showToast('خطأ في تسجيل الدخول: البريد الإلكتروني أو كلمة المرور غير صحيحة.', 'error');
-      return;
+  const handleLogin = async (email: string, pass: string) => {
+    const { error } = await firebaseService.loginWithEmail(email, pass);
+    if (error) {
+        showToast(error, 'error');
+    } else {
+        showToast(`مرحباً بعودتك!`, 'success');
     }
-    setCurrentUser(user);
-    localStorage.setItem('loggedInUser', user.email);
-    showToast(`مرحباً بعودتك، ${user.email}`, 'success');
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('loggedInUser');
+    firebaseService.logout();
     showToast('تم تسجيل الخروج بنجاح.', 'success');
   };
 
   const handleAddOrder = (name: string, ref: string, type: OrderType, date: string) => {
     if (!currentUser) return;
-    const newOrder: Order = {
-      id: `order-${Date.now()}`,
+    const newOrder: Omit<Order, 'id'> = {
       name,
       ref,
       type,
@@ -208,18 +191,13 @@ export default function App() {
       date: date,
       addedBy: currentUser.email,
     };
-    setOrders(prev => [...prev, newOrder]);
+    firebaseService.addOrder(newOrder);
     showToast('تمت إضافة الأوردر بنجاح!', 'success');
   };
 
-  const toggleOrderStatus = (orderId: string) => {
-    setOrders(prevOrders => 
-      prevOrders.map(order => 
-        order.id === orderId 
-        ? { ...order, status: order.status === 'pending' ? 'completed' : 'pending' }
-        : order
-      )
-    );
+  const toggleOrderStatus = (order: Order) => {
+    const newStatus = order.status === 'pending' ? 'completed' : 'pending';
+    firebaseService.updateOrder(order.id, { status: newStatus });
   };
 
   const handleDeleteSelected = () => {
@@ -227,8 +205,8 @@ export default function App() {
     setConfirmModal({
         title: "تأكيد الحذف",
         message: `هل أنت متأكد من رغبتك في حذف ${selectedOrders.size} أوردر(ات)؟ لا يمكن التراجع عن هذا الإجراء.`,
-        onConfirm: () => {
-            setOrders(prev => prev.filter(order => !selectedOrders.has(order.id)));
+        onConfirm: async () => {
+            await firebaseService.deleteOrders(Array.from(selectedOrders));
             setSelectedOrders(new Set());
             showToast('تم حذف الأوردرات المحددة بنجاح.', 'success');
             setConfirmModal(null);
@@ -266,7 +244,7 @@ export default function App() {
   };
 
   const handleUserRoleChange = (userId: string, newRole: UserRole) => {
-    setUsers(prevUsers => prevUsers.map(user => user.id === userId ? { ...user, role: newRole } : user));
+    firebaseService.updateUserRole(userId, newRole);
   };
   
   const escapeCsvField = (field: string | undefined): string => {
@@ -606,7 +584,7 @@ const OrderTable: React.FC<{
   selectedOrders: Set<string>;
   onSelectOrder: (orderId: string) => void;
   onSelectAll: (type: OrderType) => void;
-  onStatusToggle: (orderId: string) => void;
+  onStatusToggle: (order: Order) => void;
 }> = ({ title, orders, type, isAdmin, selectedOrders, onSelectOrder, onSelectAll, onStatusToggle }) => {
   const allVisibleSelected = orders.length > 0 && orders.every(o => selectedOrders.has(o.id));
 
@@ -643,7 +621,7 @@ const OrderTable: React.FC<{
                   <td data-label="التاريخ" className="p-2 text-sm text-gray-500 dark:text-gray-400">{toArabicNumerals(new Date(order.date).toLocaleDateString('ar-EG'))}</td>
                   <td data-label="الحالة" className="p-2">
                     {isAdmin ? (
-                      <button onClick={() => onStatusToggle(order.id)} className={`px-3 py-1 text-sm font-semibold rounded-full w-24 text-center transition-colors ${order.status === 'completed' ? 'bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-100' : 'bg-yellow-200 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100'}`}>
+                      <button onClick={() => onStatusToggle(order)} className={`px-3 py-1 text-sm font-semibold rounded-full w-24 text-center transition-colors ${order.status === 'completed' ? 'bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-100' : 'bg-yellow-200 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100'}`}>
                         {order.status === 'completed' ? 'مكتمل' : 'قيد الانتظار'}
                       </button>
                     ) : (
